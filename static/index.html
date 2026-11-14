@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d1117">
+<title>🏸 羽毛球实时比分</title>
+<style>
+:root{
+  --bg:#0d1117; --card:#161b22; --card2:#1c2333; --line:#2a3140;
+  --txt:#e6edf3; --sub:#8b949e; --live:#ff4d4f; --live-bg:rgba(255,77,79,.12);
+  --accent:#f2a93b; --win:#3fb950;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{background:var(--bg);color:var(--txt);font-family:-apple-system,"PingFang SC","Noto Sans SC",sans-serif;min-height:100vh}
+header{position:sticky;top:0;z-index:10;background:rgba(13,17,23,.92);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);padding:14px 16px 10px}
+.h-top{display:flex;align-items:center;justify-content:space-between}
+h1{font-size:18px;font-weight:700}
+h1 span{margin-right:6px}
+.meta{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--sub)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--win);animation:pulse 1.6s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.tabs{display:flex;gap:8px;margin-top:10px}
+.tab{flex:1;text-align:center;padding:7px 0;border-radius:8px;background:var(--card);color:var(--sub);font-size:13px;cursor:pointer;border:1px solid transparent}
+.tab.active{background:var(--live-bg);color:var(--live);border-color:rgba(255,77,79,.35);font-weight:600}
+.tab b{font-size:14px}
+main{padding:12px 12px 40px;max-width:640px;margin:0 auto}
+.group-title{font-size:12px;color:var(--sub);margin:14px 4px 8px;display:flex;align-items:center;gap:6px}
+.match{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:10px;transition:border-color .3s}
+.match.live{border-color:rgba(255,77,79,.45);background:linear-gradient(180deg,var(--live-bg),var(--card))}
+.top-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.badge{font-size:11px;padding:2px 8px;border-radius:20px;background:var(--card2);color:var(--sub);border:1px solid var(--line)}
+.badge.live{background:var(--live);color:#fff;border:none;font-weight:700;animation:pulse 1.6s infinite}
+.badge.round{background:rgba(242,169,59,.12);color:var(--accent);border-color:rgba(242,169,59,.35)}
+.stage{font-size:11px;color:var(--sub)}
+.tour{font-size:11px;color:var(--sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.row{display:flex;align-items:center;gap:10px;padding:5px 0}
+.player{flex:1;display:flex;align-items:center;gap:8px;font-size:15px;min-width:0}
+.player .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.player.win .nm{font-weight:700}
+.serving{font-size:11px;color:var(--accent)}
+.score-main{display:flex;align-items:center;gap:10px;justify-content:flex-end;min-width:52px}
+.score-main b{font-size:20px;font-variant-numeric:tabular-nums}
+.score-main b.win{color:var(--win)}
+.parts{display:flex;gap:6px;justify-content:flex-end}
+.part{font-size:12px;color:var(--sub);font-variant-numeric:tabular-nums;background:var(--card2);border-radius:6px;padding:3px 7px;min-width:34px;text-align:center}
+.part.cur{color:var(--txt);background:rgba(255,77,79,.15);font-weight:600}
+.col{display:flex;flex-direction:column;gap:3px;align-items:flex-end}
+.empty{text-align:center;color:var(--sub);padding:60px 0;font-size:14px;line-height:2}
+.up-time{font-size:12px;color:var(--accent)}
+.footer{text-align:center;font-size:11px;color:var(--sub);padding:10px 0 20px}
+.flash{animation:flash .8s ease}
+@keyframes flash{0%{background:rgba(242,169,59,.25)}100%{background:transparent}}
+</style>
+</head>
+<body>
+<header>
+  <div class="h-top">
+    <h1><span>🏸</span>羽毛球实时比分</h1>
+    <div class="meta"><span class="dot"></span><span id="updated">加载中…</span></div>
+  </div>
+  <div class="tabs">
+    <div class="tab active" data-f="live">🔴 进行中 <b id="c-live">0</b></div>
+    <div class="tab" data-f="upcoming">⏰ 未开始 <b id="c-up">0</b></div>
+    <div class="tab" data-f="finished">✅ 已结束 <b id="c-fin">0</b></div>
+  </div>
+</header>
+<main id="main"><div class="empty">正在连接数据源…<br>首次加载约需 10 秒</div></main>
+<div class="footer">数据来源 Flashscore · 每 20 秒自动刷新</div>
+<script>
+let DATA = null, filter = 'live';
+const cnStage = s => s.replace(/^Set\s*(\d+)$/i, '第$1局').replace('Finished','已结束');
+const cnRound = r => r.replace('Semi-finals','半决赛').replace('Quarter-finals','1/4决赛')
+  .replace('1/8-finals','1/8决赛').replace('1/16-finals','1/32决赛').replace('Final','决赛');
+const cnTour = t => t
+  .replace(/BWF WORLD TOUR - (MEN|WOMEN|MIXED DOUBLES|DOUBLES MEN|DOUBLES WOMEN)/, m => ({
+    'MEN':'男单','WOMEN':'女单','MIXED DOUBLES':'混双','DOUBLES MEN':'男双','DOUBLES WOMEN':'女双'}[m] || m))
+  .replace('Kumamoto Masters (Japan)','熊本大师赛').replace('Kaohsiung Masters (Chinese Taipei)','高雄大师赛')
+  .replace('Hong Kong Open (Hong Kong China)','香港公开赛').replace('Irish Open (Ireland)','爱尔兰公开赛')
+  .replace('South Australia International (Australia)','南澳国际赛');
+
+function scoreCells(m, side){
+  const parts = side==='home' ? m.homeParts : m.awayParts;
+  const other = side==='home' ? m.awayParts : m.homeParts;
+  if (!parts || !parts.length) return '';
+  const curIdx = parts.reduce((acc,v,i)=> v!==null ? i : acc, -1);
+  let html = '<div class="parts">';
+  parts.forEach((v,i)=>{
+    if (v===null) return;
+    const cur = m.live && i===curIdx ? ' cur' : '';
+    html += `<span class="part${cur}">${v}–${other[i]??'-'}</span>`;
+  });
+  return html + '</div>';
+}
+
+function matchCard(m){
+  const homeWin = +m.homeScore > +m.awayScore, awayWin = +m.awayScore > +m.homeScore;
+  const round = m.round ? `<span class="badge round">${cnRound(m.round)}</span>` : '';
+  const stage = m.live ? `<span class="stage">${cnStage(m.stage)}</span>` :
+    (m.status==='upcoming' ? `<span class="stage up-time">${m.stage}</span>` : '');
+  return `<div class="match ${m.live?'live':''}" id="m-${m.id}">
+    <div class="top-row">
+      ${m.live?'<span class="badge live">LIVE</span>':''}
+      ${round}${stage}
+      <span class="tour">${cnTour(m.tournament)}</span>
+    </div>
+    <div class="row">
+      <div class="player ${homeWin?'win':''}"><span>${m.homeFlag}</span><span class="nm">${m.home}</span></div>
+      <div class="col">
+        <div class="score-main"><b class="${homeWin?'win':''}">${m.homeScore||'-'}</b><b class="${awayWin?'win':''}">${m.awayScore||'-'}</b></div>
+        ${scoreCells(m,'home')}
+      </div>
+    </div>
+    <div class="row">
+      <div class="player ${awayWin?'win':''}"><span>${m.awayFlag}</span><span class="nm">${m.away}</span></div>
+      <div class="col"></div>
+    </div>
+  </div>`;
+}
+
+function render(){
+  if (!DATA) return;
+  const ms = DATA.matches || [];
+  const live = ms.filter(m=>m.status==='live'), up = ms.filter(m=>m.status==='upcoming'), fin = ms.filter(m=>m.status==='finished');
+  document.getElementById('c-live').textContent = live.length;
+  document.getElementById('c-up').textContent = up.length;
+  document.getElementById('c-fin').textContent = fin.length;
+  document.getElementById('updated').textContent = '更新于 ' + (DATA.updated_at||'');
+  const show = filter==='live'?live : filter==='upcoming'?up : fin;
+  const el = document.getElementById('main');
+  if (!show.length){
+    el.innerHTML = `<div class="empty">${filter==='live'?'当前没有进行中的比赛<br>可查看「未开始」或「已结束」标签':'暂无比赛'}</div>`;
+    return;
+  }
+  // 按赛事分组
+  const groups = {};
+  show.forEach(m=>{ (groups[m.tournament] = groups[m.tournament]||[]).push(m); });
+  let html = '';
+  for (const t in groups){
+    html += `<div class="group-title">🏸 ${cnTour(t)}</div>` + groups[t].map(matchCard).join('');
+  }
+  el.innerHTML = html;
+}
+
+async function load(){
+  try{
+    const r = await fetch('/api/live');
+    DATA = await r.json();
+    const liveN = DATA.count_live||0;
+    document.title = liveN ? `🔴${liveN} 羽毛球实时比分` : '🏸 羽毛球实时比分';
+    render();
+  }catch(e){ document.getElementById('updated').textContent='连接失败,重试中…'; }
+}
+document.querySelectorAll('.tab').forEach(t=>{
+  t.addEventListener('click',()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active'); filter = t.dataset.f; render();
+  });
+});
+load();
+setInterval(load, 15000);
+</script>
+</body>
+</html>
